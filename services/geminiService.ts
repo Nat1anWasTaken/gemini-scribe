@@ -10,8 +10,8 @@ const outputSchema: Schema = {
       items: {
         type: Type.OBJECT,
         properties: {
-          start: { type: Type.STRING, description: "Start time of the subtitle line (e.g. 00:00.000)" },
-          end: { type: Type.STRING, description: "End time of the subtitle line (e.g. 00:05.000)" },
+          start: { type: Type.STRING, description: "Start time (Format: MM:SS.mmm, e.g. 00:00.000)" },
+          end: { type: Type.STRING, description: "End time (Format: MM:SS.mmm, e.g. 00:05.123)" },
           text: { type: Type.STRING, description: "The transcribed text" }
         },
         required: ["start", "end", "text"]
@@ -40,11 +40,25 @@ export async function transcribeChunk(
   const modelId = "gemini-3-pro-preview";
 
   const prompt = `
-    You are an expert transcriber.
-    Task: Transcribe audio to subtitles with timestamps.
-    Instructions: "${description}"
-    Previous Context: "${previousSummary || "Start of audio"}"
-    Format: JSON matching the schema.
+    You are an expert transcriber and subtitler.
+    
+    Task:
+    1. Listen to the audio and generate subtitle lines.
+    2. Follow the "Transcription/Translation Instructions" below.
+    3. Provide a summary of the content.
+    4. Return precise timestamps relative to the start of this specific audio file.
+
+    Transcription/Translation Instructions:
+    "${description}"
+
+    Previous Context:
+    "${previousSummary || "This is the beginning of the audio."}"
+
+    Important Constraints:
+    - The audio file starts at 00:00.000.
+    - **STRICT TIMESTAMP FORMAT**: You MUST use "MM:SS.mmm" (Minutes:Seconds.Milliseconds).
+    - Example: "00:01.500" (correct), "1.5s" (incorrect), "00:01" (incorrect).
+    - Ensure start and end times are strictly within the audio duration.
   `;
 
   try {
