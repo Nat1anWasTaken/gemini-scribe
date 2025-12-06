@@ -44,6 +44,23 @@ const App: React.FC = () => {
     }
   }, [thinkingLog]);
 
+  // Load persisted settings
+  useEffect(() => {
+    const storedModel = localStorage.getItem('gs:modelId');
+    const storedPrompt = localStorage.getItem('gs:description');
+    if (storedModel) setModelId(storedModel);
+    if (storedPrompt) setDescription(storedPrompt);
+  }, []);
+
+  // Persist settings when they change
+  useEffect(() => {
+    localStorage.setItem('gs:modelId', modelId);
+  }, [modelId]);
+
+  useEffect(() => {
+    localStorage.setItem('gs:description', description);
+  }, [description]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
