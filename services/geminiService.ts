@@ -33,83 +33,67 @@ export async function transcribeChunk(
   onThinking?: (text: string) => void
 ): Promise<ChunkResult> {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key not found in environment variables");
-  }
+  if (!apiKey) throw new Error("API Key not found");
 
   const ai = new GoogleGenAI({ apiKey });
   
-  // Using gemini-3-pro-preview as requested for complex reasoning + audio
   const modelId = "gemini-3-pro-preview";
 
   const prompt = `
-    You are an expert transcriber and subtitler. 
-    
-    Task:
-    1. Listen to the audio and generate subtitle lines.
-    2. Follow the specific "Transcription/Translation Instructions" below (e.g., if it says "Japanese to Chinese", translate the spoken Japanese to Chinese text).
-    3. Provide a summary of the content to establish context for the next segment.
-    4. Return precise timestamps relative to the start of this specific audio file (starts at 00:00.000).
-
-    Transcription/Translation Instructions:
-    "${description}"
-
-    Previous Context (what happened before this clip):
-    "${previousSummary || "This is the beginning of the audio."}"
-
-    Important:
-    - The audio might cut off mid-sentence at the very end. Transcribe everything you hear.
-    - Timestamps format: MM:SS.mmm
+    You are an expert transcriber.
+    Task: Transcribe audio to subtitles with timestamps.
+    Instructions: "${description}"
+    Previous Context: "${previousSummary || "Start of audio"}"
+    Format: JSON matching the schema.
   `;
 
   try {
     const response = await ai.models.generateContentStream({
       model: modelId,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: "audio/wav",
-              data: base64Audio
-            }
-          },
-          { text: prompt }
-        ]
-      },
+      contents: [
+        {
+          parts: [
+            { inlineData: { mimeType: "audio/wav", data: base64Audio } },
+            { text: prompt }
+          ]
+        }
+      ],
       config: {
         responseMimeType: "application/json",
         responseSchema: outputSchema,
-        temperature: 0.2, // Low temperature for factual transcription
-        thinking: {
-          budgetTokens: 1024
+        temperature: 0.2,
+        
+        thinkingConfig: {
+          includeThoughts: true
         }
       }
     });
 
     let fullText = "";
-    for await (const chunk of response) {
-      const thinkingChunk = (chunk as any).thinking;
-      if (thinkingChunk) {
-        const thoughtText = thinkingChunk.output_text || thinkingChunk.outputText || thinkingChunk.thought || "";
-        if (thoughtText) {
-          onThinking?.(thoughtText);
-        }
-      }
 
-      const chunkText = chunk.text;
-      if (chunkText) {
-        fullText += chunkText;
-        onChunk(chunkText);
+    for await (const chunk of response) {
+      const parts = chunk.candidates?.[0]?.content?.parts || [];
+
+      for (const part of parts) {
+        // 解析思考過程 (Streamed Thoughts)
+        if (part.thought) {
+          onThinking?.(part.thought);
+        }
+
+        // 解析最終 JSON (Actual Response)
+        if (part.text) {
+          fullText += part.text;
+          onChunk(part.text);
+        }
       }
     }
 
     if (!fullText) throw new Error("No response text generated");
 
-    const result = JSON.parse(fullText) as ChunkResult;
-    return result;
+    return JSON.parse(fullText) as ChunkResult;
 
   } catch (error) {
-    console.error("Gemini Transcription Error:", error);
+    console.error("Gemini 3 Pro Transcription Error:", error);
     throw error;
   }
 }
