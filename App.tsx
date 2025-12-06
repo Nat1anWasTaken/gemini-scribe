@@ -403,22 +403,6 @@ const App: React.FC = () => {
                                 </div>
                              </div>
 
-                            {/* Editable running summary */}
-                            {(status === ProcessingStatus.TRANSCRIBING || status === ProcessingStatus.COMPLETED || status === ProcessingStatus.ERROR || contextSummary) && (
-                              <div className="mt-6">
-                                <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
-                                  <Terminal className="w-4 h-4" />
-                                  <span>Context Summary (used for next chunks)</span>
-                                </div>
-                                <textarea
-                                  value={contextSummary}
-                                  onChange={(e) => handleSummaryEdit(e.target.value)}
-                                  placeholder="Live running summary that is passed to the model for context. Edit to correct or guide the next chunks."
-                                  className="w-full border border-slate-300 rounded-md p-3 text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[90px]"
-                                />
-                              </div>
-                            )}
-
                             {/* Editable transcript so far */}
                             {srtLines.length > 0 && (
                               <div className="mt-6">
