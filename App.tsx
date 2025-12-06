@@ -251,26 +251,28 @@ const App: React.FC = () => {
             isActive={!!file && status === ProcessingStatus.IDLE}
             isCompleted={status !== ProcessingStatus.IDLE}
           >
-            <div className="mt-4">
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Model ID</label>
-              <input
-                type="text"
-                value={modelId}
-                onChange={(e) => setModelId(e.target.value)}
-                placeholder="gemini-3-pro-preview"
-                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                disabled={status !== ProcessingStatus.IDLE}
-              />
+            <div className="mt-4 space-y-4">
+              <div className="space-y-1">
+                <label className="block text-sm font-semibold text-slate-700">Model ID</label>
+                <input
+                  type="text"
+                  value={modelId}
+                  onChange={(e) => setModelId(e.target.value)}
+                  placeholder="gemini-3-pro-preview"
+                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  disabled={status !== ProcessingStatus.IDLE}
+                />
+              </div>
 
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="E.g., Transcribe Japanese audio into Traditional Chinese subtitles. Keep lines short and concise."
-                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[100px] bg-white"
+                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[120px] bg-white"
                 disabled={status !== ProcessingStatus.IDLE}
               />
               
-              <div className="mt-4 flex justify-end">
+              <div className="pt-2 flex justify-end">
                 <button
                   onClick={startProcessing}
                   disabled={!file || !description || status !== ProcessingStatus.IDLE}
