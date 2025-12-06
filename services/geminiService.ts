@@ -54,6 +54,7 @@ export async function transcribeChunk(
     2. Follow the "Transcription/Translation Instructions" below.
     3. Provide a summary of the content.
     4. Return precise timestamps relative to the start of this specific audio file.
+    5. Continue transcribing until the very end of this audio clip. If content is faint or unclear near the end, make your best effort to capture it rather than stopping early.
 
     Transcription/Translation Instructions:
     "${description}"
