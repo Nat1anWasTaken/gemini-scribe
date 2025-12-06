@@ -1,0 +1,333 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, FileAudio, FileText, Download, AlertCircle, Loader2, Terminal } from 'lucide-react';
+import { processAudioFile, blobToBase64 } from './utils/audioUtils';
+import { transcribeChunk } from './services/geminiService';
+import { parseTimestampToSeconds, generateSRTContent, downloadSRT } from './utils/srtUtils';
+import { AudioChunk, ProcessingStatus, SRTLine } from './types';
+import { ProgressBar } from './components/ProgressBar';
+import { StepCard } from './components/StepCard';
+
+const App: React.FC = () => {
+  // State
+  const [file, setFile] = useState<File | null>(null);
+  const [description, setDescription] = useState<string>("");
+  const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
+  const [statusMessage, setStatusMessage] = useState<string>("");
+  const [chunks, setChunks] = useState<AudioChunk[]>([]);
+  const [currentChunkIndex, setCurrentChunkIndex] = useState<number>(0);
+  const [srtLines, setSrtLines] = useState<SRTLine[]>([]);
+  const [completed, setCompleted] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [streamLog, setStreamLog] = useState<string>("");
+  
+  // Log container ref for auto-scrolling
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // Refs for processing loop
+  const contextSummaryRef = useRef<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [streamLog]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setError(null);
+      resetState();
+    }
+  };
+
+  const resetState = () => {
+    setStatus(ProcessingStatus.IDLE);
+    setChunks([]);
+    setSrtLines([]);
+    setCompleted(false);
+    setCurrentChunkIndex(0);
+    contextSummaryRef.current = "";
+    setStatusMessage("");
+    setStreamLog("");
+  };
+
+  const startProcessing = async () => {
+    if (!file || !description) return;
+
+    setStatus(ProcessingStatus.DECODING);
+    setError(null);
+    setCompleted(false);
+    setStreamLog("");
+    
+    try {
+      // Step 1: Decode and Split
+      const generatedChunks = await processAudioFile(file, (msg) => setStatusMessage(msg));
+      setChunks(generatedChunks);
+      
+      setStatus(ProcessingStatus.TRANSCRIBING);
+      processChunks(generatedChunks);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to process audio file.");
+      setStatus(ProcessingStatus.ERROR);
+    }
+  };
+
+  const processChunks = async (audioChunks: AudioChunk[]) => {
+    abortControllerRef.current = new AbortController();
+    let currentSrtId = 1;
+
+    for (let i = 0; i < audioChunks.length; i++) {
+      if (abortControllerRef.current?.signal.aborted) break;
+
+      const chunk = audioChunks[i];
+      setCurrentChunkIndex(i);
+      setStatusMessage(`Transcribing part ${i + 1} of ${audioChunks.length}...`);
+      setStreamLog(prev => prev + `\n--- Processing Chunk ${i + 1}/${audioChunks.length} ---\n`);
+
+      try {
+        const base64 = await blobToBase64(chunk.blob);
+        
+        // Retry logic for API calls
+        let retries = 3;
+        let result = null;
+        
+        // Handler to accumulate streaming logs
+        const onChunkLog = (text: string) => {
+            setStreamLog(prev => prev + text);
+        };
+
+        while(retries > 0 && !result) {
+            try {
+                result = await transcribeChunk(base64, description, contextSummaryRef.current, onChunkLog);
+            } catch (e) {
+                console.warn(`Retry ${4-retries} failed for chunk ${i}`);
+                setStreamLog(prev => prev + `\n[Error: Retry ${4-retries} failed...]\n`);
+                retries--;
+                if(retries === 0) throw e;
+                await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
+            }
+        }
+
+        if (result) {
+          setStreamLog(prev => prev + `\n\n[Chunk ${i + 1} Completed]\n`);
+          // Update context for next chunk
+          contextSummaryRef.current = result.summary;
+
+          // Process timestamps
+          // chunk.startTime is the absolute time where this chunk begins (0s, 600s, 1200s...)
+          // The buffer (10s) is included at the END of the audio sent to Gemini.
+          // We want to discard lines that start *after* the non-buffered duration (600s),
+          // unless it's the very last chunk.
+          
+          const chunkDurationLimit = 600; // 10 minutes
+
+          const validLines = result.lines.map(line => {
+             const startRelative = parseTimestampToSeconds(line.start);
+             const endRelative = parseTimestampToSeconds(line.end);
+             
+             return {
+               id: currentSrtId++,
+               startTime: chunk.startTime + startRelative,
+               endTime: chunk.startTime + endRelative,
+               text: line.text
+             };
+          }).filter(line => {
+             // Filter logic:
+             // A line is valid if its relative start time is within the main 10-minute block.
+             // If it starts in the 10s buffer zone (e.g. at 605s), it belongs to the *next* chunk.
+             // Exception: The very last chunk keeps everything.
+             const relativeStart = line.startTime - chunk.startTime;
+             const isLastChunk = i === audioChunks.length - 1;
+             
+             if (isLastChunk) return true;
+             return relativeStart < chunkDurationLimit;
+          });
+
+          setSrtLines(prev => [...prev, ...validLines]);
+        }
+
+      } catch (err: any) {
+        setError(`Error processing chunk ${i + 1}: ${err.message}`);
+        setStatus(ProcessingStatus.ERROR);
+        return; 
+      }
+    }
+
+    setCompleted(true);
+    setStatus(ProcessingStatus.COMPLETED);
+    setStatusMessage("Transcription complete!");
+  };
+
+  const handleDownload = () => {
+    const srtContent = generateSRTContent(srtLines);
+    downloadSRT(srtContent, `${file?.name.split('.')[0] || 'transcript'}.srt`);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto space-y-8">
+        
+        {/* Header */}
+        <div className="text-center">
+          <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight sm:text-5xl mb-4">
+            Gemini Scribe
+          </h1>
+          <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+            Long-form audio transcription using Gemini 3 Pro. Auto-splits audio, maintains context, and generates SRT subtitles.
+          </p>
+        </div>
+
+        {/* Steps Container */}
+        <div className="space-y-6">
+
+          {/* Step 1: Upload */}
+          <StepCard 
+            stepNumber={1}
+            title="Upload Audio" 
+            description="Select an audio file (MP3, WAV, M4A). Large files are supported."
+            isActive={status === ProcessingStatus.IDLE}
+            isCompleted={!!file && status !== ProcessingStatus.IDLE}
+          >
+            <div className="mt-4">
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  {file ? (
+                     <div className="flex items-center gap-2 text-indigo-600">
+                        <FileAudio className="w-8 h-8" />
+                        <span className="font-semibold text-lg">{file.name}</span>
+                        <span className="text-xs text-slate-500">({(file.size / (1024*1024)).toFixed(2)} MB)</span>
+                     </div>
+                  ) : (
+                    <>
+                        <Upload className="w-8 h-8 mb-3 text-slate-400" />
+                        <p className="mb-2 text-sm text-slate-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                    </>
+                  )}
+                </div>
+                <input type="file" className="hidden" accept="audio/*" onChange={handleFileChange} disabled={status !== ProcessingStatus.IDLE} />
+              </label>
+            </div>
+          </StepCard>
+
+          {/* Step 2: Configuration */}
+          <StepCard 
+            stepNumber={2}
+            title="Transcription Instructions" 
+            description="Tell the AI how to transcribe (e.g., 'Japanese to Traditional Chinese', 'Verbatim English', 'Add speaker labels')."
+            isActive={!!file && status === ProcessingStatus.IDLE}
+            isCompleted={status !== ProcessingStatus.IDLE}
+          >
+            <div className="mt-4">
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="E.g., Transcribe Japanese audio into Traditional Chinese subtitles. Keep lines short and concise."
+                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[100px] bg-white"
+                disabled={status !== ProcessingStatus.IDLE}
+              />
+              
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={startProcessing}
+                  disabled={!file || !description || status !== ProcessingStatus.IDLE}
+                  className={`
+                    px-6 py-2 rounded-lg font-semibold text-white shadow-sm flex items-center gap-2
+                    ${(!file || !description) ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}
+                  `}
+                >
+                  {status === ProcessingStatus.IDLE ? 'Start Transcription' : 'Processing...'}
+                </button>
+              </div>
+            </div>
+          </StepCard>
+
+          {/* Step 3: Processing */}
+          {(status === ProcessingStatus.DECODING || status === ProcessingStatus.TRANSCRIBING || status === ProcessingStatus.COMPLETED || status === ProcessingStatus.ERROR) && (
+            <StepCard 
+                stepNumber={3}
+                title="Processing" 
+                description="Splitting audio and generating transcripts with AI."
+                isActive={status !== ProcessingStatus.COMPLETED && status !== ProcessingStatus.ERROR}
+                isCompleted={status === ProcessingStatus.COMPLETED}
+            >
+                <div className="mt-4 space-y-4">
+                    {/* Overall Progress */}
+                    {status === ProcessingStatus.ERROR ? (
+                        <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 border border-red-200">
+                            <AlertCircle className="w-5 h-5" />
+                            <span>{error}</span>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                             <div className="flex items-center gap-2 text-indigo-700 font-medium">
+                                {status !== ProcessingStatus.COMPLETED && <Loader2 className="w-4 h-4 animate-spin" />}
+                                <span>{statusMessage}</span>
+                             </div>
+                             
+                             {status === ProcessingStatus.TRANSCRIBING && chunks.length > 0 && (
+                                <ProgressBar 
+                                    progress={((currentChunkIndex) / chunks.length) * 100} 
+                                    label="Total Progress"
+                                />
+                             )}
+
+                             {/* Live Stream Logs */}
+                             <div className="mt-4">
+                                <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
+                                    <Terminal className="w-4 h-4" />
+                                    <span>Live Model Output</span>
+                                </div>
+                                <div 
+                                    ref={logContainerRef}
+                                    className="bg-slate-900 text-green-400 font-mono text-xs p-4 rounded-lg h-64 overflow-y-auto whitespace-pre-wrap shadow-inner border border-slate-700"
+                                >
+                                    {streamLog || <span className="text-slate-500 italic">Waiting for model stream...</span>}
+                                </div>
+                             </div>
+                        </div>
+                    )}
+                </div>
+            </StepCard>
+          )}
+
+          {/* Step 4: Results */}
+          {completed && (
+            <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-6">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-900">Transcript Ready</h2>
+                        <p className="text-slate-500">Generated {srtLines.length} subtitle lines.</p>
+                    </div>
+                    <button
+                        onClick={handleDownload}
+                        className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-md font-semibold transition-colors"
+                    >
+                        <Download className="w-5 h-5" />
+                        Download .SRT
+                    </button>
+                </div>
+
+                <div className="bg-slate-50 rounded-lg border border-slate-200 p-4 max-h-96 overflow-y-auto font-mono text-sm">
+                    {srtLines.map((line) => (
+                        <div key={line.id} className="mb-4 last:mb-0">
+                            <div className="text-indigo-500 text-xs mb-1">
+                                {new Date(line.startTime * 1000).toISOString().substr(11, 12).replace('.', ',')} 
+                                {" --> "} 
+                                {new Date(line.endTime * 1000).toISOString().substr(11, 12).replace('.', ',')}
+                            </div>
+                            <div className="text-slate-800">{line.text}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;

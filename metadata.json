@@ -1,0 +1,5 @@
+{
+  "name": "Gemini Scribe",
+  "description": "AI-powered audio transcriber that processes long audio files into subtitles (SRT) using Gemini 3 Pro with context awareness.",
+  "requestFramePermissions": []
+}
