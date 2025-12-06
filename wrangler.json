@@ -1,0 +1,11 @@
+{
+  "name": "gemini-scribe",
+  "compatibility_date": "2024-12-06",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
