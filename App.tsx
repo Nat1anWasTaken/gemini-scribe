@@ -21,6 +21,8 @@ const App: React.FC = () => {
   const [streamLog, setStreamLog] = useState<string>("");
   const [thinkingLog, setThinkingLog] = useState<string>("");
   const [modelId, setModelId] = useState<string>("gemini-3-pro-preview");
+  const [contextSummary, setContextSummary] = useState<string>("");
+  const [failedChunkIndex, setFailedChunkIndex] = useState<number | null>(null);
   
   // Log container refs for auto-scrolling
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -60,16 +62,26 @@ const App: React.FC = () => {
     setStatusMessage("");
     setStreamLog("");
     setThinkingLog("");
+    setContextSummary("");
+    setFailedChunkIndex(null);
   };
 
   const startProcessing = async () => {
     if (!file || !description) return;
 
-    setStatus(ProcessingStatus.DECODING);
+    // Fresh run state
     setError(null);
     setCompleted(false);
+    setSrtLines([]);
+    setChunks([]);
+    setCurrentChunkIndex(0);
+    setStatusMessage("");
     setStreamLog("");
     setThinkingLog("");
+    setContextSummary("");
+    contextSummaryRef.current = "";
+    setFailedChunkIndex(null);
+    setStatus(ProcessingStatus.DECODING);
     
     try {
       // Step 1: Decode and Split
@@ -134,6 +146,8 @@ const App: React.FC = () => {
           setStreamLog(prev => prev + `\n\n[Chunk ${i + 1} Completed]\n`);
           // Update context for next chunk
           contextSummaryRef.current = result.summary;
+          setContextSummary(result.summary);
+          setFailedChunkIndex(null);
 
           // Process timestamps
           // chunk.startTime is the absolute time where this chunk begins (0s, 600s, 1200s...)
@@ -170,6 +184,7 @@ const App: React.FC = () => {
 
       } catch (err: any) {
         setError(`Error processing chunk ${i + 1}: ${err.message}`);
+        setFailedChunkIndex(i);
         setStatus(ProcessingStatus.ERROR);
         return; 
       }
@@ -182,10 +197,16 @@ const App: React.FC = () => {
 
   const resumeFromCurrent = () => {
     if (!chunks.length) return;
+    setFailedChunkIndex(null);
     setError(null);
     setStatus(ProcessingStatus.TRANSCRIBING);
     setStatusMessage(`Resuming at part ${currentChunkIndex + 1} of ${chunks.length}...`);
     processChunks(chunks, currentChunkIndex);
+  };
+
+  const handleSummaryEdit = (value: string) => {
+    setContextSummary(value);
+    contextSummaryRef.current = value;
   };
 
   const handleEditLine = (id: number, newText: string) => {
@@ -309,7 +330,14 @@ const App: React.FC = () => {
                                   className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-semibold shadow-sm"
                                   disabled={!chunks.length}
                                 >
-                                  Resume from chunk {currentChunkIndex + 1}
+                                  Retry chunk {failedChunkIndex !== null ? failedChunkIndex + 1 : currentChunkIndex + 1}
+                                </button>
+                                <button
+                                  onClick={startProcessing}
+                                  className="px-4 py-2 bg-white text-indigo-700 border border-indigo-200 rounded-md hover:bg-indigo-50 font-semibold shadow-sm disabled:opacity-50"
+                                  disabled={!file || !description}
+                                >
+                                  Restart from beginning
                                 </button>
                                 <button
                                   onClick={() => abortControllerRef.current?.abort()}
@@ -355,9 +383,25 @@ const App: React.FC = () => {
                                     ref={logContainerRef}
                                     className="bg-slate-900 text-green-400 font-mono text-xs p-4 rounded-lg h-64 overflow-y-auto whitespace-pre-wrap shadow-inner border border-slate-700"
                                 >
-                                    {streamLog || <span className="text-slate-500 italic">Waiting for model stream...</span>}
+                                {streamLog || <span className="text-slate-500 italic">Waiting for model stream...</span>}
                                 </div>
                              </div>
+
+                            {/* Editable running summary */}
+                            {(status === ProcessingStatus.TRANSCRIBING || status === ProcessingStatus.COMPLETED || contextSummary) && (
+                              <div className="mt-6">
+                                <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
+                                  <Terminal className="w-4 h-4" />
+                                  <span>Context Summary (used for next chunks)</span>
+                                </div>
+                                <textarea
+                                  value={contextSummary}
+                                  onChange={(e) => handleSummaryEdit(e.target.value)}
+                                  placeholder="Live running summary that is passed to the model for context. Edit to correct or guide the next chunks."
+                                  className="w-full border border-slate-300 rounded-md p-3 text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[90px]"
+                                />
+                              </div>
+                            )}
 
                             {/* Editable transcript so far */}
                             {srtLines.length > 0 && (
