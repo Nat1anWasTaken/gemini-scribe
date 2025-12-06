@@ -10,19 +10,26 @@ const outputSchema: Schema = {
       items: {
         type: Type.OBJECT,
         properties: {
-          start: { type: Type.STRING, description: "Start time (Format: MM:SS.mmm, e.g. 00:00.000)" },
-          end: { type: Type.STRING, description: "End time (Format: MM:SS.mmm, e.g. 00:05.123)" },
-          text: { type: Type.STRING, description: "The transcribed text" }
+          start: {
+            type: Type.STRING,
+            description: "Start time (Format: MM:SS.mmm, e.g. 00:00.000)",
+          },
+          end: {
+            type: Type.STRING,
+            description: "End time (Format: MM:SS.mmm, e.g. 00:05.123)",
+          },
+          text: { type: Type.STRING, description: "The transcribed text" },
         },
-        required: ["start", "end", "text"]
-      }
+        required: ["start", "end", "text"],
+      },
     },
     summary: {
       type: Type.STRING,
-      description: "A summary of the events and context in this audio segment, to be used for the next segment's context."
-    }
+      description:
+        "A summary of the events and context in this audio segment, to be used for the next segment's context.",
+    },
   },
-  required: ["lines", "summary"]
+  required: ["lines", "summary"],
 };
 
 export async function transcribeChunk(
@@ -30,18 +37,18 @@ export async function transcribeChunk(
   description: string,
   previousSummary: string,
   onChunk: (text: string) => void,
-  onThinking?: (text: string) => void
+  onThinking?: (text: string) => void,
 ): Promise<ChunkResult> {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key not found");
 
   const ai = new GoogleGenAI({ apiKey });
-  
+
   const modelId = "gemini-3-pro-preview";
 
   const prompt = `
     You are an expert transcriber and subtitler.
-    
+
     Task:
     1. Listen to the audio and generate subtitle lines.
     2. Follow the "Transcription/Translation Instructions" below.
@@ -68,19 +75,20 @@ export async function transcribeChunk(
         {
           parts: [
             { inlineData: { mimeType: "audio/wav", data: base64Audio } },
-            { text: prompt }
-          ]
-        }
+            { text: prompt },
+          ],
+        },
       ],
       config: {
+        maxOutputTokens: 65536,
         responseMimeType: "application/json",
         responseSchema: outputSchema,
         temperature: 0.2,
-        
+
         thinkingConfig: {
-          includeThoughts: true
-        }
-      }
+          includeThoughts: true,
+        },
+      },
     });
 
     let fullText = "";
@@ -108,7 +116,6 @@ export async function transcribeChunk(
     if (!fullText) throw new Error("No response text generated");
 
     return JSON.parse(fullText) as ChunkResult;
-
   } catch (error) {
     console.error("Gemini 3 Pro Transcription Error:", error);
     throw error;
