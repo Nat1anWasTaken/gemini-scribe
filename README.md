@@ -2,6 +2,8 @@
 
 Gemini Scribe is a Vite + React application for long-form audio transcription powered by Gemini 3 Pro. It splits large audio files into manageable chunks, preserves context between segments, and generates downloadable SRT subtitles with rich progress feedback.
 
+⚠️ Important: This app sends the Gemini API key to the browser. Do not deploy it as-is; run it only on your local machine with a key you are comfortable exposing.
+
 ## Features
 - Upload large audio files (MP3, WAV, M4A) and automatically split them for processing.
 - Streamed transcription using Gemini 3 Pro with contextual summaries between chunks.
