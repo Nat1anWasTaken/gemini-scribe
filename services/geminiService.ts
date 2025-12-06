@@ -29,7 +29,8 @@ export async function transcribeChunk(
   base64Audio: string,
   description: string,
   previousSummary: string,
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  onThinking?: (text: string) => void
 ): Promise<ChunkResult> {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -79,11 +80,22 @@ export async function transcribeChunk(
         responseMimeType: "application/json",
         responseSchema: outputSchema,
         temperature: 0.2, // Low temperature for factual transcription
+        thinking: {
+          budgetTokens: 1024
+        }
       }
     });
 
     let fullText = "";
     for await (const chunk of response) {
+      const thinkingChunk = (chunk as any).thinking;
+      if (thinkingChunk) {
+        const thoughtText = thinkingChunk.output_text || thinkingChunk.outputText || thinkingChunk.thought || "";
+        if (thoughtText) {
+          onThinking?.(thoughtText);
+        }
+      }
+
       const chunkText = chunk.text;
       if (chunkText) {
         fullText += chunkText;

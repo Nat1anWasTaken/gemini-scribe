@@ -19,9 +19,11 @@ const App: React.FC = () => {
   const [completed, setCompleted] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [streamLog, setStreamLog] = useState<string>("");
+  const [thinkingLog, setThinkingLog] = useState<string>("");
   
-  // Log container ref for auto-scrolling
+  // Log container refs for auto-scrolling
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const thinkingContainerRef = useRef<HTMLDivElement>(null);
 
   // Refs for processing loop
   const contextSummaryRef = useRef<string>("");
@@ -32,6 +34,12 @@ const App: React.FC = () => {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [streamLog]);
+
+  useEffect(() => {
+    if (thinkingContainerRef.current) {
+      thinkingContainerRef.current.scrollTop = thinkingContainerRef.current.scrollHeight;
+    }
+  }, [thinkingLog]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -50,6 +58,7 @@ const App: React.FC = () => {
     contextSummaryRef.current = "";
     setStatusMessage("");
     setStreamLog("");
+    setThinkingLog("");
   };
 
   const startProcessing = async () => {
@@ -59,6 +68,7 @@ const App: React.FC = () => {
     setError(null);
     setCompleted(false);
     setStreamLog("");
+    setThinkingLog("");
     
     try {
       // Step 1: Decode and Split
@@ -95,19 +105,23 @@ const App: React.FC = () => {
         
         // Handler to accumulate streaming logs
         const onChunkLog = (text: string) => {
-            setStreamLog(prev => prev + text);
+          setStreamLog(prev => prev + text);
         };
 
-        while(retries > 0 && !result) {
-            try {
-                result = await transcribeChunk(base64, description, contextSummaryRef.current, onChunkLog);
-            } catch (e) {
-                console.warn(`Retry ${4-retries} failed for chunk ${i}`);
-                setStreamLog(prev => prev + `\n[Error: Retry ${4-retries} failed...]\n`);
-                retries--;
-                if(retries === 0) throw e;
-                await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
-            }
+        const onThinkingLog = (text: string) => {
+          setThinkingLog(prev => prev + text);
+        };
+
+        while (retries > 0 && !result) {
+          try {
+            result = await transcribeChunk(base64, description, contextSummaryRef.current, onChunkLog, onThinkingLog);
+          } catch (e) {
+            console.warn(`Retry ${4 - retries} failed for chunk ${i}`);
+            setStreamLog(prev => prev + `\n[Error: Retry ${4 - retries} failed...]\n`);
+            retries--;
+            if (retries === 0) throw e;
+            await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
+          }
         }
 
         if (result) {
@@ -273,13 +287,24 @@ const App: React.FC = () => {
                                 />
                              )}
 
-                             {/* Live Stream Logs */}
-                             <div className="mt-4">
+                            {/* Live Stream Logs */}
+                            <div className="mt-4">
+                                <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
+                                    <Terminal className="w-4 h-4" />
+                                    <span>Model Reasoning</span>
+                                </div>
+                                <div
+                                    ref={thinkingContainerRef}
+                                    className="bg-slate-900 text-indigo-200 font-mono text-xs p-4 rounded-lg h-40 overflow-y-auto whitespace-pre-wrap shadow-inner border border-indigo-700"
+                                >
+                                    {thinkingLog || <span className="text-slate-500 italic">Waiting for reasoning stream...</span>}
+                                </div>
+
                                 <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
                                     <Terminal className="w-4 h-4" />
                                     <span>Live Model Output</span>
                                 </div>
-                                <div 
+                                <div
                                     ref={logContainerRef}
                                     className="bg-slate-900 text-green-400 font-mono text-xs p-4 rounded-lg h-64 overflow-y-auto whitespace-pre-wrap shadow-inner border border-slate-700"
                                 >
