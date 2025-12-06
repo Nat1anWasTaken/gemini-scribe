@@ -28,6 +28,13 @@ const App: React.FC = () => {
     "Rewrite the summary to keep key context but avoid tripping safety filters."
   );
   const [autoFixModelId, setAutoFixModelId] = useState<string>("gemini-3-pro-preview");
+
+  // Refs to allow runtime updates during processing
+  const autoFixEnabledRef = useRef<boolean>(false);
+  const summaryFixPromptRef = useRef<string>(
+    "Rewrite the summary to keep key context but avoid tripping safety filters."
+  );
+  const autoFixModelIdRef = useRef<string>("gemini-3-pro-preview");
   
   // Log container refs for auto-scrolling
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -78,15 +85,25 @@ const App: React.FC = () => {
 
   useEffect(() => {
     localStorage.setItem('gs:autoFixSummary', String(autoFixSummaryEnabled));
+    autoFixEnabledRef.current = autoFixSummaryEnabled;
   }, [autoFixSummaryEnabled]);
 
   useEffect(() => {
     localStorage.setItem('gs:summaryFixPrompt', summaryFixPrompt);
+    summaryFixPromptRef.current = summaryFixPrompt;
   }, [summaryFixPrompt]);
 
   useEffect(() => {
     localStorage.setItem('gs:autoFixModelId', autoFixModelId);
+    autoFixModelIdRef.current = autoFixModelId;
   }, [autoFixModelId]);
+
+  // Keep refs in sync for initial values
+  useEffect(() => {
+    autoFixEnabledRef.current = autoFixSummaryEnabled;
+    summaryFixPromptRef.current = summaryFixPrompt;
+    autoFixModelIdRef.current = autoFixModelId;
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -191,7 +208,7 @@ const App: React.FC = () => {
               continue;
             }
 
-            const canAutoFix = autoFixSummaryEnabled && summaryFixAttempt < MAX_SUMMARY_FIX_ATTEMPTS;
+            const canAutoFix = autoFixEnabledRef.current && summaryFixAttempt < MAX_SUMMARY_FIX_ATTEMPTS;
             if (canAutoFix) {
               summaryFixAttempt++;
               setStreamLog(prev => prev + `\n[Auto-fix summary attempt ${summaryFixAttempt}/${MAX_SUMMARY_FIX_ATTEMPTS}] Applying user prompt...\n`);
@@ -199,8 +216,8 @@ const App: React.FC = () => {
                 const fixedSummary = await autoFixSummary(
                   contextSummaryRef.current,
                   description,
-                  summaryFixPrompt,
-                  autoFixModelId || modelId
+                  summaryFixPromptRef.current,
+                  autoFixModelIdRef.current || modelId
                 );
                 contextSummaryRef.current = fixedSummary;
                 setContextSummary(fixedSummary);
@@ -378,7 +395,6 @@ const App: React.FC = () => {
                   type="checkbox"
                   checked={autoFixSummaryEnabled}
                   onChange={(e) => setAutoFixSummaryEnabled(e.target.checked)}
-                  disabled={status !== ProcessingStatus.IDLE}
                   className="mt-1 h-5 w-5 text-indigo-600 border-slate-300 rounded"
                 />
                 <label htmlFor="auto-fix-toggle" className="flex-1 space-y-1">
@@ -394,7 +410,6 @@ const App: React.FC = () => {
                     onChange={(e) => setSummaryFixPrompt(e.target.value)}
                     placeholder="Provide a rewrite rule, e.g., 'Neutralize explicit content and keep only neutral context.'"
                     className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[80px] bg-white"
-                    disabled={status !== ProcessingStatus.IDLE}
                   />
                   <div className="space-y-1">
                     <label className="block text-sm font-semibold text-slate-700">Model ID for auto-fix</label>
@@ -404,7 +419,6 @@ const App: React.FC = () => {
                       onChange={(e) => setAutoFixModelId(e.target.value)}
                       placeholder={modelId}
                       className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                      disabled={status !== ProcessingStatus.IDLE}
                     />
                     <p className="text-xs text-slate-500">Leave blank to reuse the main transcription model.</p>
                   </div>
