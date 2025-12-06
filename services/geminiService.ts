@@ -89,12 +89,15 @@ export async function transcribeChunk(
       const parts = chunk.candidates?.[0]?.content?.parts || [];
 
       for (const part of parts) {
-        // 解析思考過程 (Streamed Thoughts)
-        if (part.thought) {
-          onThinking?.(part.thought);
+        // Thought summaries come back with part.thought === true and the
+        // summary text is in part.text. These should NOT be added to the
+        // final JSON body or streamed into the "Live Model Output" channel.
+        if (part.thought && part.text) {
+          onThinking?.(part.text);
+          continue;
         }
 
-        // 解析最終 JSON (Actual Response)
+        // Only non-thought parts belong to the JSON response stream.
         if (part.text) {
           fullText += part.text;
           onChunk(part.text);
