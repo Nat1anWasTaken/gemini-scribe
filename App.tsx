@@ -84,11 +84,16 @@ const App: React.FC = () => {
     }
   };
 
-  const processChunks = async (audioChunks: AudioChunk[]) => {
+  const processChunks = async (audioChunks: AudioChunk[], startIndex: number = 0) => {
     abortControllerRef.current = new AbortController();
     let currentSrtId = 1;
 
-    for (let i = 0; i < audioChunks.length; i++) {
+    // If resuming, preserve existing SRT ids by starting after current length
+    if (startIndex > 0) {
+      currentSrtId = srtLines.length + 1;
+    }
+
+    for (let i = startIndex; i < audioChunks.length; i++) {
       if (abortControllerRef.current?.signal.aborted) break;
 
       const chunk = audioChunks[i];
@@ -172,6 +177,18 @@ const App: React.FC = () => {
     setCompleted(true);
     setStatus(ProcessingStatus.COMPLETED);
     setStatusMessage("Transcription complete!");
+  };
+
+  const resumeFromCurrent = () => {
+    if (!chunks.length) return;
+    setError(null);
+    setStatus(ProcessingStatus.TRANSCRIBING);
+    setStatusMessage(`Resuming at part ${currentChunkIndex + 1} of ${chunks.length}...`);
+    processChunks(chunks, currentChunkIndex);
+  };
+
+  const handleEditLine = (id: number, newText: string) => {
+    setSrtLines(prev => prev.map(line => line.id === id ? { ...line, text: newText } : line));
   };
 
   const handleDownload = () => {
@@ -269,9 +286,26 @@ const App: React.FC = () => {
                 <div className="mt-4 space-y-4">
                     {/* Overall Progress */}
                     {status === ProcessingStatus.ERROR ? (
-                        <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-center gap-2 border border-red-200">
-                            <AlertCircle className="w-5 h-5" />
-                            <span>{error}</span>
+                        <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-start gap-3 border border-red-200">
+                            <AlertCircle className="w-5 h-5 mt-0.5" />
+                            <div className="flex-1 space-y-3">
+                              <div>{error}</div>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  onClick={resumeFromCurrent}
+                                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-semibold shadow-sm"
+                                  disabled={!chunks.length}
+                                >
+                                  Resume from chunk {currentChunkIndex + 1}
+                                </button>
+                                <button
+                                  onClick={() => abortControllerRef.current?.abort()}
+                                  className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300 font-semibold shadow-sm"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -300,17 +334,44 @@ const App: React.FC = () => {
                                     {thinkingLog || <span className="text-slate-500 italic">Waiting for reasoning stream...</span>}
                                 </div>
 
-                                <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
-                                    <Terminal className="w-4 h-4" />
-                                    <span>Live Model Output</span>
-                                </div>
-                                <div
+                            <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
+                                <Terminal className="w-4 h-4" />
+                                <span>Live Model Output</span>
+                            </div>
+                            <div
                                     ref={logContainerRef}
                                     className="bg-slate-900 text-green-400 font-mono text-xs p-4 rounded-lg h-64 overflow-y-auto whitespace-pre-wrap shadow-inner border border-slate-700"
                                 >
                                     {streamLog || <span className="text-slate-500 italic">Waiting for model stream...</span>}
                                 </div>
                              </div>
+
+                            {/* Editable transcript so far */}
+                            {srtLines.length > 0 && (
+                              <div className="mt-6">
+                                <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
+                                    <Terminal className="w-4 h-4" />
+                                    <span>Edit Transcript (live)</span>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg p-3 max-h-72 overflow-y-auto space-y-3">
+                                  {srtLines.map(line => (
+                                    <div key={line.id} className="space-y-1">
+                                      <div className="text-xs text-indigo-600 font-mono">
+                                        {new Date(line.startTime * 1000).toISOString().substr(11, 12).replace('.', ',')} 
+                                        {" --> "} 
+                                        {new Date(line.endTime * 1000).toISOString().substr(11, 12).replace('.', ',')}
+                                      </div>
+                                      <textarea
+                                        value={line.text}
+                                        onChange={(e) => handleEditLine(line.id, e.target.value)}
+                                        className="w-full border border-slate-300 rounded-md p-2 text-sm font-mono bg-slate-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        rows={2}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                         </div>
                     )}
                 </div>
