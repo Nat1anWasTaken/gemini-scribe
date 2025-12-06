@@ -168,7 +168,13 @@ const App: React.FC = () => {
     }
 
     for (let i = startIndex; i < audioChunks.length; i++) {
-      if (abortControllerRef.current?.signal.aborted) break;
+      if (abortControllerRef.current?.signal.aborted) {
+        setError(`Interrupted during chunk ${i + 1}. Edit the summary and retry.`);
+        setFailedChunkIndex(i);
+        setStatus(ProcessingStatus.ERROR);
+        setStatusMessage("Processing interrupted by user.");
+        return;
+      }
 
       const chunk = audioChunks[i];
       setCurrentChunkIndex(i);
@@ -196,8 +202,19 @@ const App: React.FC = () => {
 
         while (!result) {
           try {
-            result = await transcribeChunk(base64, description, contextSummaryRef.current, modelId, onChunkLog, onThinkingLog);
+            result = await transcribeChunk(
+              base64,
+              description,
+              contextSummaryRef.current,
+              modelId,
+              onChunkLog,
+              onThinkingLog,
+              abortControllerRef.current?.signal
+            );
           } catch (e: any) {
+            if (e?.message?.toLowerCase().includes("abort")) {
+              throw e;
+            }
             console.warn(`Attempt ${attempt} failed for chunk ${i}`);
             setStreamLog(prev => prev + `\n[Error: Attempt ${attempt} failed...]\n`);
 
@@ -298,6 +315,15 @@ const App: React.FC = () => {
     setStatus(ProcessingStatus.TRANSCRIBING);
     setStatusMessage(`Resuming at part ${currentChunkIndex + 1} of ${chunks.length}...`);
     processChunks(chunks, currentChunkIndex);
+  };
+
+  const interruptCurrentChunk = () => {
+    if (status !== ProcessingStatus.TRANSCRIBING) return;
+    abortControllerRef.current?.abort();
+    setError(`Interrupted during chunk ${currentChunkIndex + 1}. Edit the summary and retry.`);
+    setFailedChunkIndex(currentChunkIndex);
+    setStatus(ProcessingStatus.ERROR);
+    setStatusMessage("Processing interrupted by user.");
   };
 
   const handleSummaryEdit = (value: string) => {
@@ -497,9 +523,18 @@ const App: React.FC = () => {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                             <div className="flex items-center gap-2 text-indigo-700 font-medium">
-                                {status !== ProcessingStatus.COMPLETED && <Loader2 className="w-4 h-4 animate-spin" />}
-                                <span>{statusMessage}</span>
+                             <div className="flex items-center justify-between gap-3 text-indigo-700 font-medium">
+                                <div className="flex items-center gap-2">
+                                  {status !== ProcessingStatus.COMPLETED && <Loader2 className="w-4 h-4 animate-spin" />}
+                                  <span>{statusMessage}</span>
+                                </div>
+                                <button
+                                  onClick={interruptCurrentChunk}
+                                  disabled={status !== ProcessingStatus.TRANSCRIBING}
+                                  className={`px-3 py-2 text-sm rounded-md font-semibold shadow-sm border transition-colors ${status === ProcessingStatus.TRANSCRIBING ? 'bg-red-600 text-white border-red-700 hover:bg-red-700' : 'bg-slate-200 text-slate-500 border-slate-300 cursor-not-allowed'}`}
+                                >
+                                  Interrupt & edit chunk
+                                </button>
                              </div>
                              
                              {status === ProcessingStatus.TRANSCRIBING && chunks.length > 0 && (

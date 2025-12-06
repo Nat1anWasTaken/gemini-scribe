@@ -64,9 +64,14 @@ export async function transcribeChunk(
   modelId: string,
   onChunk: (text: string) => void,
   onThinking?: (text: string) => void,
+  abortSignal?: AbortSignal,
 ): Promise<ChunkResult> {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error("API Key not found");
+
+  if (abortSignal?.aborted) {
+    throw new Error("Transcription aborted by user");
+  }
 
   const ai = new GoogleGenAI({ apiKey });
   const resolvedModelId = modelId.trim() || "gemini-3-pro-preview";
@@ -121,6 +126,10 @@ export async function transcribeChunk(
     let fullText = "";
 
     for await (const chunk of response) {
+      if (abortSignal?.aborted) {
+        throw new Error("Transcription aborted by user");
+      }
+
       const parts = chunk.candidates?.[0]?.content?.parts || [];
 
       for (const part of parts) {
