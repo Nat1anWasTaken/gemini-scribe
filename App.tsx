@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileAudio, FileText, Download, AlertCircle, Loader2, Terminal } from 'lucide-react';
 import { processAudioFile, blobToBase64 } from './utils/audioUtils';
-import { transcribeChunk } from './services/geminiService';
+import { transcribeChunk, autoFixSummary } from './services/geminiService';
 import { parseTimestampToSeconds, generateSRTContent, downloadSRT } from './utils/srtUtils';
 import { AudioChunk, ProcessingStatus, SRTLine } from './types';
 import { ProgressBar } from './components/ProgressBar';
@@ -23,6 +23,10 @@ const App: React.FC = () => {
   const [modelId, setModelId] = useState<string>("gemini-3-pro-preview");
   const [contextSummary, setContextSummary] = useState<string>("");
   const [failedChunkIndex, setFailedChunkIndex] = useState<number | null>(null);
+  const [autoFixSummaryEnabled, setAutoFixSummaryEnabled] = useState<boolean>(false);
+  const [summaryFixPrompt, setSummaryFixPrompt] = useState<string>(
+    "Rewrite the summary to keep key context but avoid tripping safety filters."
+  );
   
   // Log container refs for auto-scrolling
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -48,8 +52,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const storedModel = localStorage.getItem('gs:modelId');
     const storedPrompt = localStorage.getItem('gs:description');
+    const storedAutoFix = localStorage.getItem('gs:autoFixSummary');
+    const storedFixPrompt = localStorage.getItem('gs:summaryFixPrompt');
     if (storedModel) setModelId(storedModel);
     if (storedPrompt) setDescription(storedPrompt);
+    if (storedAutoFix !== null) setAutoFixSummaryEnabled(storedAutoFix === 'true');
+    if (storedFixPrompt) setSummaryFixPrompt(storedFixPrompt);
   }, []);
 
   // Persist settings when they change
@@ -60,6 +68,14 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('gs:description', description);
   }, [description]);
+
+  useEffect(() => {
+    localStorage.setItem('gs:autoFixSummary', String(autoFixSummaryEnabled));
+  }, [autoFixSummaryEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('gs:summaryFixPrompt', summaryFixPrompt);
+  }, [summaryFixPrompt]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -136,7 +152,9 @@ const App: React.FC = () => {
         
         // Retry logic for API calls (resets per chunk)
         const MAX_RETRIES = 3;
+        const MAX_SUMMARY_FIX_ATTEMPTS = 3;
         let attempt = 1;
+        let summaryFixAttempt = 0;
         let result = null;
         
         // Handler to accumulate streaming logs
@@ -148,15 +166,47 @@ const App: React.FC = () => {
           setThinkingLog(prev => prev + text);
         };
 
-        while (attempt <= MAX_RETRIES && !result) {
+        while (!result) {
           try {
             result = await transcribeChunk(base64, description, contextSummaryRef.current, modelId, onChunkLog, onThinkingLog);
-          } catch (e) {
+          } catch (e: any) {
             console.warn(`Attempt ${attempt} failed for chunk ${i}`);
             setStreamLog(prev => prev + `\n[Error: Attempt ${attempt} failed...]\n`);
-            if (attempt === MAX_RETRIES) throw e;
-            attempt++;
-            await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
+
+            const hasRetryLeft = attempt < MAX_RETRIES;
+            if (hasRetryLeft) {
+              attempt++;
+              await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
+              continue;
+            }
+
+            const canAutoFix = autoFixSummaryEnabled && summaryFixAttempt < MAX_SUMMARY_FIX_ATTEMPTS;
+            if (canAutoFix) {
+              summaryFixAttempt++;
+              setStreamLog(prev => prev + `\n[Auto-fix summary attempt ${summaryFixAttempt}/${MAX_SUMMARY_FIX_ATTEMPTS}] Applying user prompt...\n`);
+              try {
+                const fixedSummary = await autoFixSummary(
+                  contextSummaryRef.current,
+                  description,
+                  summaryFixPrompt,
+                  modelId
+                );
+                contextSummaryRef.current = fixedSummary;
+                setContextSummary(fixedSummary);
+                setStreamLog(prev => prev + `\n[Auto-fix applied. Retrying with updated summary.]\n`);
+              } catch (fixErr: any) {
+                setStreamLog(prev => prev + `\n[Auto-fix failed: ${fixErr.message}]\n`);
+              }
+
+              attempt = 1; // reset attempts after adjusting summary
+              continue;
+            }
+
+            const failureMessage = autoFixSummaryEnabled
+              ? `${e?.message || 'Unknown error'} after ${MAX_RETRIES} retries and ${summaryFixAttempt} auto-fix attempts. Edit the context summary below and retry.`
+              : `${e?.message || 'Unknown error'} after ${MAX_RETRIES} retries. Edit the context summary below and retry.`;
+
+            throw new Error(failureMessage);
           }
         }
 
@@ -310,6 +360,31 @@ const App: React.FC = () => {
                 className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[120px] bg-white"
                 disabled={status !== ProcessingStatus.IDLE}
               />
+
+              <div className="flex items-start gap-3">
+                <input
+                  id="auto-fix-toggle"
+                  type="checkbox"
+                  checked={autoFixSummaryEnabled}
+                  onChange={(e) => setAutoFixSummaryEnabled(e.target.checked)}
+                  disabled={status !== ProcessingStatus.IDLE}
+                  className="mt-1 h-5 w-5 text-indigo-600 border-slate-300 rounded"
+                />
+                <label htmlFor="auto-fix-toggle" className="flex-1 space-y-1">
+                  <div className="text-sm font-semibold text-slate-700">Auto-fix context summary after 3 failed attempts</div>
+                  <p className="text-xs text-slate-500">If a chunk hits safety blocks 3 times, we will rewrite the running summary with your prompt and retry (up to 3 auto-fix cycles) before falling back to manual editing.</p>
+                </label>
+              </div>
+
+              {autoFixSummaryEnabled && (
+                <textarea
+                  value={summaryFixPrompt}
+                  onChange={(e) => setSummaryFixPrompt(e.target.value)}
+                  placeholder="Provide a rewrite rule, e.g., 'Neutralize explicit content and keep only neutral context.'"
+                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[80px] bg-white"
+                  disabled={status !== ProcessingStatus.IDLE}
+                />
+              )}
               
               <div className="pt-2 flex justify-end">
                 <button

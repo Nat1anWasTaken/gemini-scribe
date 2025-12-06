@@ -122,3 +122,50 @@ export async function transcribeChunk(
     throw error;
   }
 }
+
+export async function autoFixSummary(
+  currentSummary: string,
+  instructions: string,
+  userPrompt: string,
+  modelId: string,
+): Promise<string> {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key not found");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const resolvedModelId = modelId.trim() || "gemini-3-pro-preview";
+  const guidance = userPrompt.trim() ||
+    "Rewrite the summary so it avoids triggering safety filters but still preserves the key context for the next chunk.";
+
+  const prompt = `You are sanitizing a context summary that is used to guide the next transcription chunk.
+
+User provided guidance (apply faithfully):
+${guidance}
+
+Transcription / translation instructions for the overall task:
+${instructions || "(none provided)"}
+
+Current summary that may be tripping safety filters:
+${currentSummary || "(empty)"}
+
+Rewrite the summary so it keeps essential context but is safer and neutral. Return ONLY the rewritten summary text, no explanations or bullet points.`;
+
+  const response = await ai.models.generateContent({
+    model: resolvedModelId,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: {
+      temperature: 0.3,
+      maxOutputTokens: 256,
+    },
+  });
+
+  const candidates = (response as any)?.response?.candidates || (response as any)?.candidates || [];
+  const textParts = candidates?.[0]?.content?.parts || [];
+  const combined = textParts.map((part) => part.text || "").join("").trim();
+
+  if (!combined) {
+    throw new Error("Auto-fix did not return a summary");
+  }
+
+  return combined;
+}
