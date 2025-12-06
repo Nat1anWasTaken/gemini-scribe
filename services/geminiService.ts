@@ -1,5 +1,30 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import {
+  GoogleGenAI,
+  Type,
+  Schema,
+  HarmCategory,
+  HarmBlockThreshold,
+} from "@google/genai";
 import { ChunkResult } from "../types";
+
+const safetySettings = [
+  {
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+];
 
 // Schema definition for the expected JSON output
 const outputSchema: Schema = {
@@ -85,6 +110,7 @@ export async function transcribeChunk(
         responseMimeType: "application/json",
         responseSchema: outputSchema,
         temperature: 0.2,
+        safetySettings: safetySettings,
 
         thinkingConfig: {
           includeThoughts: true,
@@ -134,7 +160,8 @@ export async function autoFixSummary(
 
   const ai = new GoogleGenAI({ apiKey });
   const resolvedModelId = modelId.trim() || "gemini-3-pro-preview";
-  const guidance = userPrompt.trim() ||
+  const guidance =
+    userPrompt.trim() ||
     "Rewrite the summary so it avoids triggering safety filters but still preserves the key context for the next chunk.";
 
   const prompt = `You are sanitizing a context summary that is used to guide the next transcription chunk.
@@ -156,12 +183,19 @@ Rewrite the summary so it keeps essential context but is safer and neutral. Retu
     config: {
       temperature: 0.3,
       maxOutputTokens: 256,
+      safetySettings: safetySettings,
     },
   });
 
-  const candidates = (response as any)?.response?.candidates || (response as any)?.candidates || [];
+  const candidates =
+    (response as any)?.response?.candidates ||
+    (response as any)?.candidates ||
+    [];
   const textParts = candidates?.[0]?.content?.parts || [];
-  const combined = textParts.map((part) => part.text || "").join("").trim();
+  const combined = textParts
+    .map((part) => part.text || "")
+    .join("")
+    .trim();
 
   if (!combined) {
     throw new Error("Auto-fix did not return a summary");
