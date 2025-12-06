@@ -3,7 +3,7 @@ import { AudioChunk } from '../types';
 
 // Constants
 const TARGET_SAMPLE_RATE = 16000; // 16kHz is sufficient for speech and saves tokens/bandwidth
-const CHUNK_DURATION_SEC = 600; // 10 minutes
+const CHUNK_DURATION_SEC = 300; // 5 minutes
 const OVERLAP_SEC = 10; // 10 seconds buffer
 
 /**

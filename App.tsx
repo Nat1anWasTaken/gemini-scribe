@@ -140,7 +140,7 @@ const App: React.FC = () => {
           // We want to discard lines that start *after* the non-buffered duration (600s),
           // unless it's the very last chunk.
           
-          const chunkDurationLimit = 600; // 10 minutes
+          const chunkDurationLimit = 300; // 5 minutes
 
           const validLines = result.lines.map(line => {
              const startRelative = parseTimestampToSeconds(line.start);
@@ -154,8 +154,8 @@ const App: React.FC = () => {
              };
           }).filter(line => {
              // Filter logic:
-             // A line is valid if its relative start time is within the main 10-minute block.
-             // If it starts in the 10s buffer zone (e.g. at 605s), it belongs to the *next* chunk.
+             // A line is valid if its relative start time is within the main 5-minute block.
+             // If it starts in the 10s buffer zone (e.g. at 305s), it belongs to the *next* chunk.
              // Exception: The very last chunk keeps everything.
              const relativeStart = line.startTime - chunk.startTime;
              const isLastChunk = i === audioChunks.length - 1;
