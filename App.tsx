@@ -390,7 +390,7 @@ const App: React.FC = () => {
                              </div>
 
                             {/* Editable running summary */}
-                            {(status === ProcessingStatus.TRANSCRIBING || status === ProcessingStatus.COMPLETED || contextSummary) && (
+                            {(status === ProcessingStatus.TRANSCRIBING || status === ProcessingStatus.COMPLETED || status === ProcessingStatus.ERROR || contextSummary) && (
                               <div className="mt-6">
                                 <div className="flex items-center gap-2 mb-2 text-sm text-slate-600 font-semibold">
                                   <Terminal className="w-4 h-4" />
