@@ -182,7 +182,7 @@ Rewrite the summary so it keeps essential context but is safer and neutral. Retu
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       temperature: 0.3,
-      maxOutputTokens: 256,
+      maxOutputTokens: 8192,
       safetySettings: safetySettings,
     },
   });
