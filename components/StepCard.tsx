@@ -6,6 +6,7 @@ interface StepCardProps {
   description: string;
   isActive: boolean;
   isCompleted: boolean;
+  alwaysShowChildren?: boolean;
   children?: React.ReactNode;
   stepNumber: number;
 }
@@ -15,6 +16,7 @@ export const StepCard: React.FC<StepCardProps> = ({
   description,
   isActive,
   isCompleted,
+  alwaysShowChildren = false,
   children,
   stepNumber
 }) => {
@@ -42,7 +44,7 @@ export const StepCard: React.FC<StepCardProps> = ({
             {title}
           </h3>
           <p className="text-sm text-slate-500 mb-4">{description}</p>
-          {(isActive || isCompleted) && children}
+          {(isActive || isCompleted || alwaysShowChildren) && children}
         </div>
       </div>
     </div>

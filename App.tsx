@@ -117,8 +117,9 @@ const App: React.FC = () => {
       try {
         const base64 = await blobToBase64(chunk.blob);
         
-        // Retry logic for API calls
-        let retries = 3;
+        // Retry logic for API calls (resets per chunk)
+        const MAX_RETRIES = 3;
+        let attempt = 1;
         let result = null;
         
         // Handler to accumulate streaming logs
@@ -130,14 +131,14 @@ const App: React.FC = () => {
           setThinkingLog(prev => prev + text);
         };
 
-        while (retries > 0 && !result) {
+        while (attempt <= MAX_RETRIES && !result) {
           try {
             result = await transcribeChunk(base64, description, contextSummaryRef.current, modelId, onChunkLog, onThinkingLog);
           } catch (e) {
-            console.warn(`Retry ${4 - retries} failed for chunk ${i}`);
-            setStreamLog(prev => prev + `\n[Error: Retry ${4 - retries} failed...]\n`);
-            retries--;
-            if (retries === 0) throw e;
+            console.warn(`Attempt ${attempt} failed for chunk ${i}`);
+            setStreamLog(prev => prev + `\n[Error: Attempt ${attempt} failed...]\n`);
+            if (attempt === MAX_RETRIES) throw e;
+            attempt++;
             await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
           }
         }
@@ -310,13 +311,14 @@ const App: React.FC = () => {
 
           {/* Step 3: Processing */}
           {(status === ProcessingStatus.DECODING || status === ProcessingStatus.TRANSCRIBING || status === ProcessingStatus.COMPLETED || status === ProcessingStatus.ERROR) && (
-            <StepCard 
-                stepNumber={3}
-                title="Processing" 
-                description="Splitting audio and generating transcripts with AI."
-                isActive={status !== ProcessingStatus.COMPLETED && status !== ProcessingStatus.ERROR}
-                isCompleted={status === ProcessingStatus.COMPLETED}
-            >
+          <StepCard 
+            stepNumber={3}
+            title="Processing" 
+            description="Splitting audio and generating transcripts with AI."
+            isActive={status !== ProcessingStatus.COMPLETED && status !== ProcessingStatus.ERROR}
+            isCompleted={status === ProcessingStatus.COMPLETED}
+            alwaysShowChildren={status === ProcessingStatus.ERROR}
+        >
                 <div className="mt-4 space-y-4">
                     {/* Overall Progress */}
                     {status === ProcessingStatus.ERROR ? (
