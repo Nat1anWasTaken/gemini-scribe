@@ -36,6 +36,7 @@ export async function transcribeChunk(
   base64Audio: string,
   description: string,
   previousSummary: string,
+  modelId: string,
   onChunk: (text: string) => void,
   onThinking?: (text: string) => void,
 ): Promise<ChunkResult> {
@@ -43,8 +44,7 @@ export async function transcribeChunk(
   if (!apiKey) throw new Error("API Key not found");
 
   const ai = new GoogleGenAI({ apiKey });
-
-  const modelId = "gemini-3-pro-preview";
+  const resolvedModelId = modelId.trim() || "gemini-3-pro-preview";
 
   const prompt = `
     You are an expert transcriber and subtitler.
@@ -71,7 +71,7 @@ export async function transcribeChunk(
 
   try {
     const response = await ai.models.generateContentStream({
-      model: modelId,
+      model: resolvedModelId,
       contents: [
         {
           parts: [

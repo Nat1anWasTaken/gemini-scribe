@@ -20,6 +20,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [streamLog, setStreamLog] = useState<string>("");
   const [thinkingLog, setThinkingLog] = useState<string>("");
+  const [modelId, setModelId] = useState<string>("gemini-3-pro-preview");
   
   // Log container refs for auto-scrolling
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -119,7 +120,7 @@ const App: React.FC = () => {
 
         while (retries > 0 && !result) {
           try {
-            result = await transcribeChunk(base64, description, contextSummaryRef.current, onChunkLog, onThinkingLog);
+            result = await transcribeChunk(base64, description, contextSummaryRef.current, modelId, onChunkLog, onThinkingLog);
           } catch (e) {
             console.warn(`Retry ${4 - retries} failed for chunk ${i}`);
             setStreamLog(prev => prev + `\n[Error: Retry ${4 - retries} failed...]\n`);
@@ -251,6 +252,16 @@ const App: React.FC = () => {
             isCompleted={status !== ProcessingStatus.IDLE}
           >
             <div className="mt-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Model ID</label>
+              <input
+                type="text"
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                placeholder="gemini-3-pro-preview"
+                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                disabled={status !== ProcessingStatus.IDLE}
+              />
+
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
