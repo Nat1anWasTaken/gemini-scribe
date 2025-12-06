@@ -27,6 +27,7 @@ const App: React.FC = () => {
   const [summaryFixPrompt, setSummaryFixPrompt] = useState<string>(
     "Rewrite the summary to keep key context but avoid tripping safety filters."
   );
+  const [autoFixModelId, setAutoFixModelId] = useState<string>("gemini-3-pro-preview");
   
   // Log container refs for auto-scrolling
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -54,10 +55,16 @@ const App: React.FC = () => {
     const storedPrompt = localStorage.getItem('gs:description');
     const storedAutoFix = localStorage.getItem('gs:autoFixSummary');
     const storedFixPrompt = localStorage.getItem('gs:summaryFixPrompt');
+    const storedAutoFixModelId = localStorage.getItem('gs:autoFixModelId');
     if (storedModel) setModelId(storedModel);
     if (storedPrompt) setDescription(storedPrompt);
     if (storedAutoFix !== null) setAutoFixSummaryEnabled(storedAutoFix === 'true');
     if (storedFixPrompt) setSummaryFixPrompt(storedFixPrompt);
+    if (storedAutoFixModelId) {
+      setAutoFixModelId(storedAutoFixModelId);
+    } else if (storedModel) {
+      setAutoFixModelId(storedModel);
+    }
   }, []);
 
   // Persist settings when they change
@@ -76,6 +83,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('gs:summaryFixPrompt', summaryFixPrompt);
   }, [summaryFixPrompt]);
+
+  useEffect(() => {
+    localStorage.setItem('gs:autoFixModelId', autoFixModelId);
+  }, [autoFixModelId]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -189,7 +200,7 @@ const App: React.FC = () => {
                   contextSummaryRef.current,
                   description,
                   summaryFixPrompt,
-                  modelId
+                  autoFixModelId || modelId
                 );
                 contextSummaryRef.current = fixedSummary;
                 setContextSummary(fixedSummary);
@@ -377,13 +388,27 @@ const App: React.FC = () => {
               </div>
 
               {autoFixSummaryEnabled && (
-                <textarea
-                  value={summaryFixPrompt}
-                  onChange={(e) => setSummaryFixPrompt(e.target.value)}
-                  placeholder="Provide a rewrite rule, e.g., 'Neutralize explicit content and keep only neutral context.'"
-                  className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[80px] bg-white"
-                  disabled={status !== ProcessingStatus.IDLE}
-                />
+                <div className="space-y-3">
+                  <textarea
+                    value={summaryFixPrompt}
+                    onChange={(e) => setSummaryFixPrompt(e.target.value)}
+                    placeholder="Provide a rewrite rule, e.g., 'Neutralize explicit content and keep only neutral context.'"
+                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[80px] bg-white"
+                    disabled={status !== ProcessingStatus.IDLE}
+                  />
+                  <div className="space-y-1">
+                    <label className="block text-sm font-semibold text-slate-700">Model ID for auto-fix</label>
+                    <input
+                      type="text"
+                      value={autoFixModelId}
+                      onChange={(e) => setAutoFixModelId(e.target.value)}
+                      placeholder={modelId}
+                      className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      disabled={status !== ProcessingStatus.IDLE}
+                    />
+                    <p className="text-xs text-slate-500">Leave blank to reuse the main transcription model.</p>
+                  </div>
+                </div>
               )}
               
               <div className="pt-2 flex justify-end">
