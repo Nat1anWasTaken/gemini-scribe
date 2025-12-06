@@ -348,6 +348,20 @@ const App: React.FC = () => {
                                   Cancel
                                 </button>
                               </div>
+
+                              {/* Keep summary editable even after failure */}
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-sm text-slate-600 font-semibold">
+                                  <Terminal className="w-4 h-4" />
+                                  <span>Context Summary (edit to unstick and retry)</span>
+                                </div>
+                                <textarea
+                                  value={contextSummary}
+                                  onChange={(e) => handleSummaryEdit(e.target.value)}
+                                  placeholder="Adjust the running summary to avoid safety blocks or to give clearer context, then hit Retry."
+                                  className="w-full border border-slate-300 rounded-md p-3 text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[90px]"
+                                />
+                              </div>
                             </div>
                         </div>
                     ) : (
